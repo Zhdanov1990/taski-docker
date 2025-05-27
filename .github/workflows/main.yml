@@ -1,52 +1,50 @@
-# Основной workflow для проекта Taski
 name: Main Taski workflow
 
-# Триггер: запуск при каждом пуше в ветку main
+# Запускаем workflow при пуше в ветку main
 on:
   push:
     branches:
       - main
 
 jobs:
-  # Джоб для запуска тестов
+  # Джоб для тестирования бэкенда
   tests:
-    runs-on: ubuntu-latest  # Используется последняя версия Ubuntu
+    runs-on: ubuntu-latest
 
     services:
-      # Настройка контейнера PostgreSQL для тестов
+      # Настройка контейнера PostgreSQL
       postgres:
-        image: postgres:13.10  # Образ PostgreSQL
+        image: postgres:13.10
         env:
-          POSTGRES_USER: django_user        # Имя пользователя БД
-          POSTGRES_PASSWORD: django_password  # Пароль
-          POSTGRES_DB: django_db            # Название БД
+          POSTGRES_USER: django_user
+          POSTGRES_PASSWORD: django_password
+          POSTGRES_DB: django_db
         ports:
-          - 5432:5432  # Проброс порта
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        # Проверка готовности БД перед запуском
 
     steps:
-      # Клонирование репозитория
+      # Клонируем репозиторий
       - uses: actions/checkout@v3
 
-      # Установка Python 3.9
+      # Устанавливаем Python нужной версии
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.9
 
-      # Установка зависимостей (flake8, isort, requirements.txt)
+      # Устанавливаем зависимости
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip 
           pip install flake8==6.0.0 flake8-isort==6.0.0
           pip install -r ./backend/requirements.txt 
 
-      # Статический анализ кода и запуск тестов Django
+      # Запускаем линтер flake8 и юнит-тесты Django
       - name: Test with flake8 and django tests
         env:
           POSTGRES_USER: django_user
@@ -55,36 +53,113 @@ jobs:
           DB_HOST: 127.0.0.1
           DB_PORT: 5432
         run: |
-          python -m flake8 backend/        # Проверка стиля кода
+          python -m flake8 backend/
           cd backend/
-          python manage.py test            # Запуск тестов Django
+          python manage.py test
 
-  # Джоб для сборки и пуша Docker-образа в DockerHub
+  # Джоб для сборки и отправки backend-образа на Docker Hub
   build_and_push_to_docker_hub:
-    name: Push Docker image to DockerHub
+    name: Push backend Docker image to DockerHub
     runs-on: ubuntu-latest
-    needs: tests  # Зависит от прохождения джоба tests
+    needs: tests  # Выполняется только после успешных тестов
 
     steps:
-      # Клонирование репозитория
       - name: Check out the repo
         uses: actions/checkout@v3
 
-      # Настройка Docker Buildx (многоархитектурная сборка)
+      # Настройка Buildx для сборки Docker-образов
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # Аутентификация в DockerHub через секреты
+      # Авторизация в Docker Hub
       - name: Login to Docker
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}  # имя пользователя
-          password: ${{ secrets.DOCKER_HUB_PASSWORD }}  # персональный токен
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
-      # Сборка образа из директории ./backend и пуш в DockerHub
+      # Сборка и пуш образа backend
       - name: Push to DockerHub
         uses: docker/build-push-action@v4
         with:
-          context: ./backend/                   # Путь к Dockerfile
-          push: true                            # Публикация образа
-          tags: zhdanova686/taski_backend:latest  # Тег образа
+          context: ./backend/
+          push: true
+          tags: zhdanova686/taski_backend:latest
+
+  # Джоб для тестирования фронтенда
+  frontend_tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      # Установка Node.js нужной версии
+      - name: Set up nodeJS
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      # Установка зависимостей проекта фронтенда
+      - name: Install dependencies
+        run: |
+          cd frontend/
+          npm ci
+
+      # Запуск фронтенд-тестов
+      - name: Test frontend
+        run: |
+          cd frontend/
+          npm run test
+
+  # Джоб для сборки и отправки frontend-образа на Docker Hub
+  build_frontend_and_push_to_docker_hub:
+    name: Push frontend Docker image to DockerHub
+    runs-on: ubuntu-latest
+    needs: frontend_tests  # Выполняется после успешного прохождения фронтенд-тестов
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker 
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Сборка и отправка образа frontend
+      - name: Push to DockerHub
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend/
+          push: true
+          tags: zhdanova686/taski_frontend:latest
+
+  # Джоб для сборки и отправки образа Nginx gateway на Docker Hub
+  build_gateway_and_push_to_docker_hub:
+    name: Push gateway Docker image to DockerHub
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker 
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Сборка и отправка образа Nginx gateway
+      - name: Push to DockerHub
+        uses: docker/build-push-action@v4
+        with:
+          context: ./gateway/
+          push: true
+          tags: zhdanova686/taski_gateway:latest
