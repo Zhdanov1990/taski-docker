@@ -1,38 +1,52 @@
+# Основной workflow для проекта Taski
 name: Main Taski workflow
 
+# Триггер: запуск при каждом пуше в ветку main
 on:
   push:
     branches:
       - main
 
 jobs:
+  # Джоб для запуска тестов
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # Используется последняя версия Ubuntu
+
     services:
+      # Настройка контейнера PostgreSQL для тестов
       postgres:
-        image: postgres:13.10
+        image: postgres:13.10  # Образ PostgreSQL
         env:
-          POSTGRES_USER: django_user
-          POSTGRES_PASSWORD: django_password
-          POSTGRES_DB: django_db
+          POSTGRES_USER: django_user        # Имя пользователя БД
+          POSTGRES_PASSWORD: django_password  # Пароль
+          POSTGRES_DB: django_db            # Название БД
         ports:
-          - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+          - 5432:5432  # Проброс порта
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        # Проверка готовности БД перед запуском
 
     steps:
+      # Клонирование репозитория
       - uses: actions/checkout@v3
 
+      # Установка Python 3.9
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.9
 
+      # Установка зависимостей (flake8, isort, requirements.txt)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip 
           pip install flake8==6.0.0 flake8-isort==6.0.0
           pip install -r ./backend/requirements.txt 
 
+      # Статический анализ кода и запуск тестов Django
       - name: Test with flake8 and django tests
         env:
           POSTGRES_USER: django_user
@@ -41,30 +55,36 @@ jobs:
           DB_HOST: 127.0.0.1
           DB_PORT: 5432
         run: |
-          python -m flake8 backend/
+          python -m flake8 backend/        # Проверка стиля кода
           cd backend/
-          python manage.py test
+          python manage.py test            # Запуск тестов Django
 
+  # Джоб для сборки и пуша Docker-образа в DockerHub
   build_and_push_to_docker_hub:
     name: Push Docker image to DockerHub
     runs-on: ubuntu-latest
-    needs: tests
+    needs: tests  # Зависит от прохождения джоба tests
+
     steps:
+      # Клонирование репозитория
       - name: Check out the repo
         uses: actions/checkout@v3
 
+      # Настройка Docker Buildx (многоархитектурная сборка)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
+      # Аутентификация в DockerHub через секреты
       - name: Login to Docker
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}  # имя пользователя
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}  # персональный токен
 
+      # Сборка образа из директории ./backend и пуш в DockerHub
       - name: Push to DockerHub
         uses: docker/build-push-action@v4
         with:
-          context: ./backend/
-          push: true
-          tags: zhdanova686/taski_backend:latest
+          context: ./backend/                   # Путь к Dockerfile
+          push: true                            # Публикация образа
+          tags: zhdanova686/taski_backend:latest  # Тег образа
